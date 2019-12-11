@@ -1,0 +1,3 @@
+result0 = 7 9 *
+result1 = 3 result0 +
+result2 = a result1 =

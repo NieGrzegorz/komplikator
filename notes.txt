@@ -1,0 +1,41 @@
+
+
+
+if(a+1 > b-3)
+{
+	//kod
+}
+
+Ify -> 
+
+
+if rozbic na 2 
+
+1: if statement
+		:if-begin block{}
+
+2: if_begin
+		:IF '(' wyr ')' -> generujemy numerowana lbelke, generujemy obliczanie waunku przeciwnego, generujemy go to 
+
+
+else : dla elsa generujemy skok przed labelką do labelki po elsie
+
+skok bezarunkowy do ewaluacji warunku na koncu while``:w
+`
+
+
+while: 
+
+nie rozni sie skladniowo od ifa:
+WHILE'('wyr')' 
+
+while tez rozbijamy na while_stm i while_begin
+petla for: 
+
+FOR'('init ';' control ';' expr')'i
+
+init przed petla 
+LABEL 
+
+	
+ 
