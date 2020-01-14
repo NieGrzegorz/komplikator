@@ -20,12 +20,16 @@ struct StackOb
 	string val;
 };
 stack<StackOb> s;
-map<string, string> symbols;  
+map<string, string> symbols; 
+
+//Utility functions
 void genAsm(string asmOp, StackOb sOb1, StackOb sOb2, StackOb sOb3);
 void saveSymbol(StackOb sOb);
 void createSymbolsTable();
 void stackVar(const char* val, string type);
 void generateSource();
+void stdoutGenerator(string asmOp, int syscall_id, string reg); 
+
 vector<string> asmCode;    
 %}
 
@@ -38,6 +42,7 @@ vector<string> asmCode;
 };
 %token NEQ EQ GT LT GEQ LEQ
 %token STRING CHAR INT BOOL DOUBLE
+%token STDIN STDOUT
 %token FN RET
 %token <text> ID
 %token <text> STR
@@ -50,13 +55,38 @@ program
 	|program block {cout<<"program with block\n";}
 	;
 
+if_expr
+	:if_begin block {}
+
+if_begin 
+	:IF '(' condition ')'{}
+
 block	
 	:assign {cout<<"block\n";}
+	|stdout
+	|stdin
       	;
+
+stdout	:STDOUT LC {}
+      	|STDOUT LR {}
+	;
+
+stdin	:STDIN LC {}
+      	|STDIN LR {}
+	;
 
 assign 	
 	:ID '=' wyr ';'{cout<<"B1: "<<$1<<"\n"; stackVar($1, "ID");genTrio('=', "assign");}
 	;
+
+condition
+	:wyr EQ wyr {}
+	|wyr NEQ wyr {}
+	|wyr GT wyr {}
+	|wyr LT wyr {}
+	|wyr GEQ wyr {}
+	|wyr LEQ wyr {}
+
 wyr 
 	:wyr '+' skladnik {genTrio('+', "add");}
 	|wyr '-' skladnik {genTrio('-', "sub");}
@@ -217,6 +247,17 @@ void generateSource()
 	{
 		sourceFile<<it;
 	}	
-	
+}
 
+void stdoutGenerator(string asmOp, int syscall_id, string reg)
+{
+	string line;
+	line = "#Printing value";
+	asmCode.push_back(line);
+	line = "li $v0, " + syscall_id + "\n";
+	asmCode.push_back(line);
+	line = asmOp + " " + reg + ", " + "\n";
+	asmCode.push_back(line); 
+	line = "syscall\n";
+	asmCode.push_back(line); 
 }

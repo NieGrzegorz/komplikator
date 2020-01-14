@@ -27,6 +27,8 @@ int yyerror(const char *msg, ...);
 "bool"		{fprintf(yyout,"bool\n"); return BOOL;}
 "string"	{fprintf(yyout,"STRING\n"); return STRING;}
 "char" 		{fprintf(yyout,"CHAR\n");return CHAR;}
+"print"		{return STDOUT;}
+"read"		{return STDIN;}
 \-\>		{fprintf(yyout,"RET\n"); return RET;}
 "fn"		{fprintf(yyout, "FN\n"); return FN;}
 ([1-9][0-9]*|0)[.][0-9]*	{yylval.dval = atof(yytext);  return LR;}
