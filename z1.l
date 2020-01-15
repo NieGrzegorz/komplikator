@@ -22,6 +22,8 @@ int yyerror(const char *msg, ...);
 \>		{fprintf(yyout, ">\n"); return GT;}
 \<\=		{fprintf(yyout, "<=\n"); return LEQ;}
 \>\=		{fprintf(yyout, ">=\n"); return GEQ;}
+\{		{return '{';}
+\}		{return '}';}
 "int"		{fprintf(yyout, "int\n"); return INT;}
 "double" 	{fprintf(yyout,"double\n"); return DOUBLE;}
 "bool"		{fprintf(yyout,"bool\n"); return BOOL;}
@@ -29,6 +31,8 @@ int yyerror(const char *msg, ...);
 "char" 		{fprintf(yyout,"CHAR\n");return CHAR;}
 "print"		{return STDOUT;}
 "read"		{return STDIN;}
+"if"		{return IF; }
+"else"		{return ELSE;}
 \-\>		{fprintf(yyout,"RET\n"); return RET;}
 "fn"		{fprintf(yyout, "FN\n"); return FN;}
 ([1-9][0-9]*|0)[.][0-9]*	{yylval.dval = atof(yytext);  return LR;}

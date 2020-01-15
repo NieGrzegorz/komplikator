@@ -5,32 +5,44 @@
 #include <stack>
 #include <vector>
 #include <map> 
+
 extern "C" int yylex(); 
 extern "C" int yyerror(const char *msg,...);
-using namespace std; 
 extern FILE *yyout;
-fstream trioFile;
-fstream symbolsFile;
-fstream sourceFile;
-void genTrio(char op, string asmOp); 
-int tempCounter = 0; 
+
+using namespace std; 
+ 
 struct StackOb
 {
 	string type;
 	string val;
 };
+
+//Globals
+fstream trioFile;
+fstream symbolsFile;
+fstream sourceFile;
+int tempCounter = 0;
+int labelCounter = 0;
+string conditionOp = ""; 
 stack<StackOb> s;
+stack<string> labelStack; 
 map<string, string> symbols; 
+vector<string> asmCode;    
 
 //Utility functions
+void genTrio(char op, string asmOp); 
 void genAsm(string asmOp, StackOb sOb1, StackOb sOb2, StackOb sOb3);
 void saveSymbol(StackOb sOb);
 void createSymbolsTable();
-void stackVar(const char* val, string type);
+void stackVar(string val, string type);
 void generateSource();
-void stdoutGenerator(string asmOp, int syscall_id, string reg); 
-
-vector<string> asmCode;    
+void stdoutGenerator(string asmOp, int syscall_id, string reg);
+void stdinHandler(string symbol, int syscall_id);
+void genCondition(string asmOp);
+void genElseStatement();
+void genLabel();  
+bool isSymbolDefined(string symbol); 
 %}
 
 %union
@@ -42,6 +54,7 @@ vector<string> asmCode;
 };
 %token NEQ EQ GT LT GEQ LEQ
 %token STRING CHAR INT BOOL DOUBLE
+%token IF ELSE
 %token STDIN STDOUT
 %token FN RET
 %token <text> ID
@@ -52,26 +65,39 @@ vector<string> asmCode;
 %%
 program	
 	:block {cout<<"program \n";}
+	|if_expr {}
 	|program block {cout<<"program with block\n";}
+	|program if_expr {}
 	;
 
 if_expr
-	:if_begin block {}
+	:if_begin '{' block '}' {genLabel();}
+	|if_expr else_expr {genLabel();}
+	;
 
 if_begin 
-	:IF '(' condition ')'{}
+	:IF '(' condition ')'{genCondition(conditionOp);}
+	;
+
+else_expr
+	:else_begin '{' block '}' {}
+	;
+
+else_begin
+	:ELSE {} 
+	;
 
 block	
 	:assign {cout<<"block\n";}
-	|stdout
-	|stdin
+	|stdout {}
+	|stdin {}
       	;
 
-stdout	:STDOUT LC {}
+stdout	:STDOUT '(' LC ')' ';' {StackOb sOb; sOb.type = "INT"; sOb.val = to_string($3); s.push(sOb); stdoutGenerator("li", 1, "$a0");}
       	|STDOUT LR {}
 	;
 
-stdin	:STDIN LC {}
+stdin	:STDIN '('ID')'';' {string value($3); stdinHandler(value, 5);}
       	|STDIN LR {}
 	;
 
@@ -80,12 +106,13 @@ assign
 	;
 
 condition
-	:wyr EQ wyr {}
-	|wyr NEQ wyr {}
-	|wyr GT wyr {}
-	|wyr LT wyr {}
-	|wyr GEQ wyr {}
-	|wyr LEQ wyr {}
+	:wyr EQ wyr {conditionOp = "bne";}
+	|wyr NEQ wyr {conditionOp = "beq";}
+	|wyr GT wyr {conditionOp = "ble";}
+	|wyr LT wyr {conditionOp = "bge";}
+	|wyr GEQ wyr {conditionOp = "blt";}
+	|wyr LEQ wyr {conditionOp = "bgt";}
+	;
 
 wyr 
 	:wyr '+' skladnik {genTrio('+', "add");}
@@ -101,8 +128,8 @@ skladnik
 	;
 
 czynnik
-	:ID {stackVar($1, "ID"); }
-	|LC {StackOb sOb; sOb.type = "INT"; sOb.val = to_string($1); s.push(sOb);cout<<"Pushed: "<<sOb.val<<"\n";}
+	:ID {string value($1); stackVar(value, "ID"); }
+	|LC {stackVar(to_string($1), "INT");}
 	|LR {StackOb sOb; sOb.type = "DOUBLE"; sOb.val = to_string($1); s.push(sOb);cout<<"Here\n";}
 	| {cout<< "not recognized terminal\n";}
 	;
@@ -129,14 +156,16 @@ int main(int argc, char **argv)
 	return 0; 
 } 
 
-void stackVar(const char* val, string type)
+void stackVar(string val, string type)
 {
-	string value(val);
 	StackOb sOb; 
 	sOb.type = type; 
-	sOb.val = value; 
+	sOb.val = val; 
 	s.push(sOb);
-	saveSymbol(sOb);
+	if("ID" == type)
+	{
+		saveSymbol(sOb);
+	}
 }
 
 void genAsm(string op, StackOb sOb1, StackOb sOb2, StackOb sOb3)
@@ -251,13 +280,82 @@ void generateSource()
 
 void stdoutGenerator(string asmOp, int syscall_id, string reg)
 {
+	StackOb param = s.top(); 
+	s.pop();
 	string line;
-	line = "#Printing value";
+	line = "#Printing value\n";
 	asmCode.push_back(line);
-	line = "li $v0, " + syscall_id + "\n";
+	line = "li $v0, " + to_string(syscall_id) + " \n";
 	asmCode.push_back(line);
-	line = asmOp + " " + reg + ", " + "\n";
+	line = asmOp + " " + reg + ", " + param.val  + " \n";
 	asmCode.push_back(line); 
 	line = "syscall\n";
 	asmCode.push_back(line); 
+}
+
+void genCondition(string asmOp)
+{
+	string line; 
+	string label = "LBL"; 
+	label.append(to_string(labelCounter));
+	labelCounter++; 
+	StackOb rhs = s.top(); 
+	s.pop();
+	StackOb lhs = s.top();
+	s.pop();
+	line = "lw $t2, "+lhs.val + " \n";
+	asmCode.push_back(line);  
+	line = "lw $t3, "+rhs.val + " \n";
+	asmCode.push_back(line);  
+	
+	line = asmOp + " $t2, $t3, "+label+" \n";
+	asmCode.push_back(line); 
+	labelStack.push(label);
+}
+
+void genLabel()
+{
+	string line; 
+	line = labelStack.top(); 
+	labelStack.pop();
+	line.append(":\n"); 
+	asmCode.push_back(line); 
+}
+
+void genElseStatement()
+{
+	string label = "LBL"; 
+	label.append(to_string(labelCounter));
+	labelCounter++; 
+	labelStack.push(label);
+
+}
+
+void stdinHandler(string symbol, int syscall_id)
+{
+	if(isSymbolDefined(symbol))
+	{
+		string line; 
+		line = "li $v0, " + to_string(syscall_id) + " \n"; 
+		asmCode.push_back(line);
+		line = "syscall\n"; 
+		asmCode.push_back(line); 
+		line = "sw %v0, " + symbol + "\n";
+		asmCode.push_back(line);  
+		
+		
+	}
+	else
+	{
+		cout<<"Undefined symbol " + symbol + "\n";
+	}
+	
+}
+
+bool isSymbolDefined(string symbol)
+{
+	bool retVal = false;
+	auto res = symbols.find(symbol); 
+	if(res != symbols.end()) retVal = true;
+	return retVal;
 }
