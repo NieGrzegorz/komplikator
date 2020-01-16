@@ -39,10 +39,12 @@ void stackVar(string val, string type);
 void generateSource();
 void stdoutGenerator(string asmOp, int syscall_id, string reg);
 void stdinHandler(string symbol, int syscall_id);
-void genCondition(string asmOp);
+void genCondition(string asmOp, bool is_loop);
 void genElseStatement();
 void genLabel();  
-bool isSymbolDefined(string symbol); 
+bool isSymbolDefined(string symbol);
+void genUnconJump();
+string createLabel();  
 %}
 
 %union
@@ -55,6 +57,7 @@ bool isSymbolDefined(string symbol);
 %token NEQ EQ GT LT GEQ LEQ
 %token STRING CHAR INT BOOL DOUBLE
 %token IF ELSE
+%token WHILE
 %token STDIN STDOUT
 %token FN RET
 %token <text> ID
@@ -70,13 +73,21 @@ program
 	|program if_expr {}
 	;
 
+while_expr
+	:while_begin '{' block '}' {genUnconJump(); genLabel();}
+	;
+
+while_begin
+	:WHILE '(' condition ')' {genCondition(conditionOp, true);}
+	;
+
 if_expr
 	:if_begin '{' block '}' {genLabel();}
 	|if_expr else_expr {genLabel();}
 	;
 
 if_begin 
-	:IF '(' condition ')'{genCondition(conditionOp);}
+	:IF '(' condition ')'{genCondition(conditionOp, false);}
 	;
 
 else_expr
@@ -134,6 +145,7 @@ czynnik
 	| {cout<< "not recognized terminal\n";}
 	;
 %%
+
 int main(int argc, char **argv)
 {
 	trioFile.open("out.txt", ios_base::out|ios_base::in);
@@ -239,7 +251,6 @@ void genTrio(char op, string asmOp)
 		trioFile<<"Failed\n";
 		std::cout<<"Stack size < 2\n";
 	}
-
 }
 
 void saveSymbol(StackOb sOb)
@@ -293,12 +304,26 @@ void stdoutGenerator(string asmOp, int syscall_id, string reg)
 	asmCode.push_back(line); 
 }
 
-void genCondition(string asmOp)
+string createLabel()
+{
+	string label = "LBL"; 
+	label.append(to_string(labelCounter)); 
+	labelCounter++;
+	return label; 
+}
+
+void genCondition(string asmOp, bool is_loop)
 {
 	string line; 
-	string label = "LBL"; 
-	label.append(to_string(labelCounter));
-	labelCounter++; 
+	if(is_loop)
+	{
+		string loop_label = createLabel(); 
+		line = loop_label +":\n";
+		asmCode.push_back(line);
+	}
+
+	string out_label = createLabel(); 
+	labelStack(out_label); 
 	StackOb rhs = s.top(); 
 	s.pop();
 	StackOb lhs = s.top();
@@ -308,9 +333,14 @@ void genCondition(string asmOp)
 	line = "lw $t3, "+rhs.val + " \n";
 	asmCode.push_back(line);  
 	
-	line = asmOp + " $t2, $t3, "+label+" \n";
-	asmCode.push_back(line); 
-	labelStack.push(label);
+	line = asmOp + " $t2, $t3, " + out_label + " \n";
+	asmCode.push_back(line);
+	
+	if(is_loop)
+	{
+		labelStack.push(loop_label);
+	}
+
 }
 
 void genLabel()
@@ -342,8 +372,6 @@ void stdinHandler(string symbol, int syscall_id)
 		asmCode.push_back(line); 
 		line = "sw %v0, " + symbol + "\n";
 		asmCode.push_back(line);  
-		
-		
 	}
 	else
 	{
@@ -359,3 +387,11 @@ bool isSymbolDefined(string symbol)
 	if(res != symbols.end()) retVal = true;
 	return retVal;
 }
+
+void genUnconJump()
+{
+	string line = " b "+ labelStack.top();
+	labelStack.pop();
+	asmCode.push_back(line); 
+} 
+

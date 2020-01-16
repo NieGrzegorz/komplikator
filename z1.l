@@ -33,6 +33,7 @@ int yyerror(const char *msg, ...);
 "read"		{return STDIN;}
 "if"		{return IF; }
 "else"		{return ELSE;}
+"while" 	{return WHILE;}
 \-\>		{fprintf(yyout,"RET\n"); return RET;}
 "fn"		{fprintf(yyout, "FN\n"); return FN;}
 ([1-9][0-9]*|0)[.][0-9]*	{yylval.dval = atof(yytext);  return LR;}
