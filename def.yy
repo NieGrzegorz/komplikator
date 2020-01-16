@@ -332,7 +332,7 @@ void genCondition(string asmOp, bool is_loop)
 	asmCode.push_back(line);  
 	line = "lw $t3, "+rhs.val + " \n";
 	asmCode.push_back(line);  
-	
+
 	line = asmOp + " $t2, $t3, " + out_label + " \n";
 	asmCode.push_back(line);
 	
