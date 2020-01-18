@@ -16,6 +16,7 @@ struct StackOb
 {
 	string type;
 	string val;
+	bool isArr = false;
 };
 
 //Globals
@@ -29,13 +30,14 @@ stack<StackOb> s;
 stack<string> labelStack; 
 map<string, string> symbols; 
 vector<string> asmCode;    
+vector<pair<string, int>> arrayList;
 
 //Utility functions
 void genTrio(char op, string asmOp); 
 void genAsm(string asmOp, StackOb sOb1, StackOb sOb2, StackOb sOb3);
 void saveSymbol(StackOb sOb);
 void createSymbolsTable();
-void stackVar(string val, string type);
+void stackVar(string val, string type, bool isArr = false);
 void generateSource();
 void stdoutGenerator(string asmOp, int syscall_id, string reg);
 void stdinHandler(string symbol, int syscall_id);
@@ -44,7 +46,10 @@ void genElseStatement();
 void genLabel();  
 bool isSymbolDefined(string symbol);
 void genUnconJump();
-string createLabel();  
+string createLabel(); 
+string getAsmOpType(string argType);
+void declArray(string name, int size); 
+string translOp(string argType, string argOp); 
 %}
 
 %union
@@ -69,8 +74,10 @@ string createLabel();
 program	
 	:block {cout<<"program \n";}
 	|if_expr {}
+	|while_expr {}
 	|program block {cout<<"program with block\n";}
 	|program if_expr {}
+	|program while_expr {}
 	;
 
 while_expr
@@ -83,7 +90,7 @@ while_begin
 
 if_expr
 	:if_begin '{' block '}' {genLabel();}
-	|if_expr else_expr {genLabel();}
+	|if_begin '{' block '}' else_expr {genLabel();}
 	;
 
 if_begin 
@@ -95,13 +102,17 @@ else_expr
 	;
 
 else_begin
-	:ELSE {} 
+	:ELSE {genElseStatement();} 
 	;
 
 block	
 	:assign {cout<<"block\n";}
+	|block block{}
 	|stdout {}
 	|stdin {}
+	|if_expr {}
+	|while_expr {}
+	|arr_decl {}
       	;
 
 stdout	:STDOUT '(' LC ')' ';' {StackOb sOb; sOb.type = "INT"; sOb.val = to_string($3); s.push(sOb); stdoutGenerator("li", 1, "$a0");}
@@ -110,6 +121,14 @@ stdout	:STDOUT '(' LC ')' ';' {StackOb sOb; sOb.type = "INT"; sOb.val = to_strin
 
 stdin	:STDIN '('ID')'';' {string value($3); stdinHandler(value, 5);}
       	|STDIN LR {}
+	;
+
+arr_expr
+	:ID '[' wyr ']' {string value($1); stackVar(value, "ID", true);}
+	;
+
+arr_decl
+	:INT ID '[' LC ']' ';' {declArray($2, $4);}  
 	;
 
 assign 	
@@ -141,6 +160,7 @@ skladnik
 czynnik
 	:ID {string value($1); stackVar(value, "ID"); }
 	|LC {stackVar(to_string($1), "INT");}
+	|arr_expr {}
 	|LR {StackOb sOb; sOb.type = "DOUBLE"; sOb.val = to_string($1); s.push(sOb);cout<<"Here\n";}
 	| {cout<< "not recognized terminal\n";}
 	;
@@ -168,13 +188,14 @@ int main(int argc, char **argv)
 	return 0; 
 } 
 
-void stackVar(string val, string type)
+void stackVar(string val, string type, bool isArr)
 {
 	StackOb sOb; 
 	sOb.type = type; 
-	sOb.val = val; 
+	sOb.val = val;
+	sOb.isArr = isArr; 
 	s.push(sOb);
-	if("ID" == type)
+	if(("ID" == type) && !isArr)
 	{
 		saveSymbol(sOb);
 	}
@@ -187,25 +208,13 @@ void genAsm(string op, StackOb sOb1, StackOb sOb2, StackOb sOb3)
 	asmCode.push_back(line);
 	if(op != "assign")
 	{
-		if(sOb1.type == "ID")
-		{
-			line ="lw $t0, "+ sOb1.val + "\n";
-		}
-		else
-		{
-			line ="li $t0, "+ sOb1.val + "\n";
-		}
+		string loadOp =  getAsmOpType(sOb1.type);
+		line = loadOp +" $t0, "+ sOb1.val + "\n";
 		asmCode.push_back(line);
 	
 
-		if(sOb2.type == "ID")
-		{
-			line ="lw $t1, "+ sOb2.val + "\n";
-		}
-		else
-		{
-			line ="li $t1, "+ sOb2.val + "\n";
-		}
+		loadOp =  getAsmOpType(sOb2.type);
+		line = loadOp +" $t1, "+ sOb2.val + "\n";
 		asmCode.push_back(line);
 
 		line =op+" $t0, $t0, $t1\n";
@@ -215,7 +224,8 @@ void genAsm(string op, StackOb sOb1, StackOb sOb2, StackOb sOb3)
 	}
 	else
 	{
-		line ="lw $t0, "+ sOb1.val + "\n";
+		string loadOp =  getAsmOpType(sOb1.type);
+		line = loadOp +" $t0, "+ sOb1.val + "\n";
 		asmCode.push_back(line);
 		line ="sw $t0, "+ sOb2.val + "\n";
 		asmCode.push_back(line);
@@ -282,6 +292,11 @@ void generateSource()
 		sourceFile<<"\t"<<it.first<<":\t.word\t0\n";
 	}
 
+	for(auto it : arrayList)
+	{
+		sourceFile<<"\t"<<it.first<<":\t.word\t0:"<<it.second<<"\n";
+	}
+
 	sourceFile<<".text\n";
 	for(auto it : asmCode)
 	{
@@ -314,23 +329,27 @@ string createLabel()
 
 void genCondition(string asmOp, bool is_loop)
 {
-	string line; 
+	string line;
+	string loop_label; 
 	if(is_loop)
 	{
-		string loop_label = createLabel(); 
+		loop_label = createLabel(); 
 		line = loop_label +":\n";
 		asmCode.push_back(line);
 	}
 
 	string out_label = createLabel(); 
-	labelStack(out_label); 
+	labelStack.push(out_label); 
 	StackOb rhs = s.top(); 
 	s.pop();
 	StackOb lhs = s.top();
 	s.pop();
-	line = "lw $t2, "+lhs.val + " \n";
+	
+	string op = getAsmOpType(lhs.type);
+	line = op + " $t2, "+lhs.val + " \n";
 	asmCode.push_back(line);  
-	line = "lw $t3, "+rhs.val + " \n";
+	op = getAsmOpType(rhs.type);
+	line = op + " $t3, "+rhs.val + " \n";
 	asmCode.push_back(line);  
 
 	line = asmOp + " $t2, $t3, " + out_label + " \n";
@@ -357,8 +376,11 @@ void genElseStatement()
 	string label = "LBL"; 
 	label.append(to_string(labelCounter));
 	labelCounter++; 
+	
+	string line = "b " + label + " \n";
+	asmCode.push_back(line); 
+	genLabel(); 
 	labelStack.push(label);
-
 }
 
 void stdinHandler(string symbol, int syscall_id)
@@ -370,7 +392,7 @@ void stdinHandler(string symbol, int syscall_id)
 		asmCode.push_back(line);
 		line = "syscall\n"; 
 		asmCode.push_back(line); 
-		line = "sw %v0, " + symbol + "\n";
+		line = "sw $v0, " + symbol + "\n";
 		asmCode.push_back(line);  
 	}
 	else
@@ -390,8 +412,30 @@ bool isSymbolDefined(string symbol)
 
 void genUnconJump()
 {
-	string line = " b "+ labelStack.top();
+	string line = " b "+ labelStack.top() + "\n";
 	labelStack.pop();
 	asmCode.push_back(line); 
 } 
 
+string getAsmOpType(string argType)
+{
+	string retVal; 
+
+	if("ID" == argType) retVal = "lw"; 
+	else if("INT" == argType) retVal = "li";
+	else if("DOUBLE" == argType) retVal ="l.s"; 
+
+	return retVal; 
+} 
+
+void declArray(string name, int size)
+{
+	arrayList.push_back(make_pair(name, size));
+}  
+
+string translOp(string argType, string argOp)
+{
+	string retVal = argOp;
+	if("DOUBLE" == argType) retVal.append(".s");
+	return retVal;
+} 

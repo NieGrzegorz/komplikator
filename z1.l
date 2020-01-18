@@ -24,6 +24,8 @@ int yyerror(const char *msg, ...);
 \>\=		{fprintf(yyout, ">=\n"); return GEQ;}
 \{		{return '{';}
 \}		{return '}';}
+\[		{return '[';}
+\]		{return ']';}
 "int"		{fprintf(yyout, "int\n"); return INT;}
 "double" 	{fprintf(yyout,"double\n"); return DOUBLE;}
 "bool"		{fprintf(yyout,"bool\n"); return BOOL;}
